@@ -56,6 +56,12 @@ def is_url_safe(url, base_url=None, safe_domains=None):
         return False
 
 
+# The two halves of this tool define scope differently. The fetch
+# below compares full origins through this helper, scheme and port
+# included, so an http to https hop on the same host is a finding.
+# The HTML analysis checks hostnames only, so the same hop inside a
+# page counts as safe. The same target can be a finding on one path
+# and clean on the other.
 def _origin(url):
     parsed = urllib.parse.urlparse(url)
     port = parsed.port
@@ -120,6 +126,11 @@ def analyze_html(html_content, base_url, input_param=None, safe_domains=None):
                 consider(url)
 
     # Check for <a href="..."> redirects (less likely to be vulnerable, but worth checking)
+    # Every anchor on the page goes through consider, so every
+    # ordinary outbound link to another site is reported as a
+    # potential unvalidated redirect. On a normal page with external
+    # links the findings list is mostly the site's own navigation and
+    # references, and a reader has to sort those from real redirects.
     for a_tag in soup.find_all('a', href=True):
         consider(a_tag['href'])
 
@@ -189,6 +200,11 @@ def test_input_param(url, input_param, headers):
     if not location:
         return None
     target = urllib.parse.urljoin(test_url, location)
+    # The test is a raw substring check for the unencoded value. A
+    # server that echoes the parameter back percent encoded, which is
+    # the well behaved way to reflect input into a Location header,
+    # does not produce this substring, so controlled redirects of
+    # that shape are missed.
     if INPUT_TEST_VALUE in target:
         return target
     return None
